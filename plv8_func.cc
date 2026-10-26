@@ -141,14 +141,14 @@ WrapCallback(FunctionCallback func)
 	return External::New(isolate,
 			reinterpret_cast<void *>(
 				reinterpret_cast<uintptr_t>(func)),
-			v8::kExternalPointerTypeTagDefault);
+			kPlv8ExtTagCallback);
 }
 
 static inline FunctionCallback
 UnwrapCallback(Handle<v8::Value> value)
 {
 	return reinterpret_cast<FunctionCallback>(
-			reinterpret_cast<uintptr_t>(External::Cast(*value)->Value(v8::kExternalPointerTypeTagDefault)));
+			reinterpret_cast<uintptr_t>(External::Cast(*value)->Value(kPlv8ExtTagCallback)));
 }
 
 static inline void
@@ -477,7 +477,7 @@ SetupPrepFunctions(Handle<ObjectTemplate> templ)
 	PropertyAttribute attrFull =
 		PropertyAttribute(ReadOnly | DontEnum | DontDelete);
 
-	templ->SetInternalFieldCount(3);
+	templ->SetInternalFieldCount(1);
 	SetCallback(templ, "cursor", plv8_PlanCursor, attrFull);
 	SetCallback(templ, "execute", plv8_PlanExecute, attrFull);
 	SetCallback(templ, "return_query", plv8_PlanReturnQuery, attrFull);
@@ -527,7 +527,7 @@ SetupWindowFunctions(Handle<ObjectTemplate> templ)
  * v8 is not exception-safe! We cannot throw C++ exceptions over v8 functions.
  * So, we catch C++ exceptions and convert them to JavaScript ones.
  */
-static void
+static __attribute__((aligned(32))) void
 plv8_FunctionInvoker(const FunctionCallbackInfo<v8::Value> &args) throw()
 {
 	PLV8_ASSERT_MAIN_PG_THREAD();
@@ -844,6 +844,13 @@ plv8_Execute(const FunctionCallbackInfo<v8::Value> &args)
 	args.GetReturnValue().Set(SPIResultToValue(status));
 }
 
+struct plv8_prepared_plan_handle
+{
+	SPIPlanPtr			plan;
+	plv8_param_state   *parstate;
+	int32_t				in_use;
+};
+
 /*
  * plv8.prepare(statement, args...)
  */
@@ -920,12 +927,16 @@ plv8_Prepare(const FunctionCallbackInfo<v8::Value> &args)
 
 	subtran.exit(true);
 
+	plv8_prepared_plan_handle *handle =
+		(plv8_prepared_plan_handle *) MemoryContextAllocZero(TopMemoryContext, sizeof(plv8_prepared_plan_handle));
+	handle->plan = saved;
+	handle->parstate = parstate;
+	handle->in_use = 0;
+
 	Local<ObjectTemplate> templ = Local<ObjectTemplate>::New(isolate, current_context->plan_template);
 
 	Local<v8::Object> result = templ->NewInstance(isolate->GetCurrentContext()).ToLocalChecked();
-	result->SetInternalField(0, External::New(isolate, saved, v8::kExternalPointerTypeTagDefault));
-	result->SetInternalField(1, External::New(isolate, parstate, v8::kExternalPointerTypeTagDefault));
-	result->SetInternalField(2, Int32::New(isolate, 0));
+	result->SetInternalField(0, External::New(isolate, handle, kPlv8ExtTagSPIPlan));
 
 	args.GetReturnValue().Set(result);
 }
@@ -938,9 +949,8 @@ check_plan_this(const FunctionCallbackInfo<v8::Value> &args)
 
 	if (current_context == nullptr || current_context->plan_ftmpl.IsEmpty() ||
 		self.IsEmpty() || !current_context->plan_ftmpl.Get(isolate)->HasInstance(self) ||
-		self->InternalFieldCount() < 3 ||
-		!self->GetInternalField(0).As<v8::Value>()->IsExternal() ||
-		!self->GetInternalField(1).As<v8::Value>()->IsExternal())
+		self->InternalFieldCount() < 1 ||
+		!self->GetInternalField(0).As<v8::Value>()->IsExternal())
 	{
 		throw js_error("unexpected type");
 	}
@@ -949,20 +959,20 @@ check_plan_this(const FunctionCallbackInfo<v8::Value> &args)
 class PlanInUseGuard
 {
 private:
-	Isolate *m_isolate;
-	Local<v8::Object> m_self;
+	plv8_prepared_plan_handle *m_handle;
 
 public:
-	PlanInUseGuard(Isolate *isolate, Local<v8::Object> self)
-		: m_isolate(isolate), m_self(self)
+	PlanInUseGuard(Isolate * /*isolate*/, Local<v8::Object> self)
+		: m_handle(static_cast<plv8_prepared_plan_handle *>(
+			self->GetInternalField(0).As<External>()->Value(kPlv8ExtTagSPIPlan)))
 	{
-		int32_t in_use = m_self->GetInternalField(2).As<v8::Int32>()->Value();
-		m_self->SetInternalField(2, Int32::New(m_isolate, in_use + 1));
+		if (m_handle != nullptr)
+			m_handle->in_use++;
 	}
 	~PlanInUseGuard()
 	{
-		int32_t in_use = m_self->GetInternalField(2).As<v8::Int32>()->Value();
-		m_self->SetInternalField(2, Int32::New(m_isolate, in_use - 1));
+		if (m_handle != nullptr)
+			m_handle->in_use--;
 	}
 };
 
@@ -986,8 +996,9 @@ plv8_PlanCursor(const FunctionCallbackInfo<v8::Value> &args)
 	check_plan_this(args);
 	PlanInUseGuard		in_use_guard(isolate, self);
 
-	plan = static_cast<SPIPlanPtr>(
-			self->GetInternalField(0).As<External>()->Value(v8::kExternalPointerTypeTagDefault));
+	plv8_prepared_plan_handle *handle = static_cast<plv8_prepared_plan_handle *>(
+			self->GetInternalField(0).As<External>()->Value(kPlv8ExtTagSPIPlan));
+	plan = handle ? handle->plan : NULL;
 
 	if (plan == NULL) {
 		StringInfoData	buf;
@@ -1011,8 +1022,7 @@ plv8_PlanCursor(const FunctionCallbackInfo<v8::Value> &args)
 	/*
 	 * If the plan has the variable param info, use it.
 	 */
-	parstate = static_cast<plv8_param_state *>(
-			self->GetInternalField(1).As<External>()->Value(v8::kExternalPointerTypeTagDefault));
+	parstate = handle ? handle->parstate : NULL;
 
 	if (parstate)
 		argcount = parstate->numParams;
@@ -1100,8 +1110,9 @@ plv8_PlanExecute(const FunctionCallbackInfo<v8::Value> &args)
 	check_plan_this(args);
 	PlanInUseGuard		in_use_guard(isolate, self);
 
-	plan = static_cast<SPIPlanPtr>(
-			self->GetInternalField(0).As<External>()->Value(v8::kExternalPointerTypeTagDefault));
+	plv8_prepared_plan_handle *handle = static_cast<plv8_prepared_plan_handle *>(
+			self->GetInternalField(0).As<External>()->Value(kPlv8ExtTagSPIPlan));
+	plan = handle ? handle->plan : NULL;
 	/* XXX: Add plan validation */
 
 	if (args.Length() > 0)
@@ -1116,8 +1127,7 @@ plv8_PlanExecute(const FunctionCallbackInfo<v8::Value> &args)
 	/*
 	 * If the plan has the variable param info, use it.
 	 */
-	parstate = static_cast<plv8_param_state *>(
-			self->GetInternalField(1).As<External>()->Value(v8::kExternalPointerTypeTagDefault));
+	parstate = handle ? handle->parstate : NULL;
 
 	if (parstate)
 		argcount = parstate->numParams;
@@ -1196,26 +1206,26 @@ plv8_PlanFree(const FunctionCallbackInfo<v8::Value> &args)
 	int					status = 0;
 
 	check_plan_this(args);
-	if (self->GetInternalField(2).As<v8::Int32>()->Value() != 0)
+	plv8_prepared_plan_handle *handle = static_cast<plv8_prepared_plan_handle *>(
+			self->GetInternalField(0).As<External>()->Value(kPlv8ExtTagSPIPlan));
+	if (handle != nullptr && handle->in_use != 0)
 		throw js_error("cannot free a plan in use");
 
-	plan = static_cast<SPIPlanPtr>(
-			self->GetInternalField(0).As<External>()->Value(v8::kExternalPointerTypeTagDefault));
-
-	if (plan)
-		status = SPI_freeplan(plan);
-
-	self->SetInternalField(0, External::New(isolate, 0, v8::kExternalPointerTypeTagDefault));
-
-	parstate = static_cast<plv8_param_state *>(
-			self->GetInternalField(1).As<External>()->Value(v8::kExternalPointerTypeTagDefault));
-
-	self->SetInternalField(1, External::New(isolate, 0, v8::kExternalPointerTypeTagDefault));
-	if (parstate)
+	if (handle != nullptr)
 	{
-		if (parstate->paramTypes)
-			pfree(parstate->paramTypes);
-		pfree(parstate);
+		plan = handle->plan;
+		if (plan)
+			status = SPI_freeplan(plan);
+
+		parstate = handle->parstate;
+		if (parstate)
+		{
+			if (parstate->paramTypes)
+				pfree(parstate->paramTypes);
+			pfree(parstate);
+		}
+		pfree(handle);
+		self->SetInternalField(0, External::New(isolate, 0, kPlv8ExtTagSPIPlan));
 	}
 
 	args.GetReturnValue().Set(Int32::New(isolate, status));
@@ -1421,10 +1431,10 @@ plv8_ReturnNext(const FunctionCallbackInfo<v8::Value>& args)
 		throw js_error("return_next called in context that cannot accept a set");
 
 	Converter *conv = static_cast<Converter *>(
-			Handle<External>::Cast(conv_value)->Value(v8::kExternalPointerTypeTagDefault));
+			Handle<External>::Cast(conv_value)->Value(kPlv8ExtTagConverter));
 
 	Tuplestorestate *tupstore = static_cast<Tuplestorestate *>(
-			Handle<External>::Cast(tupstore_value)->Value(v8::kExternalPointerTypeTagDefault));
+			Handle<External>::Cast(tupstore_value)->Value(kPlv8ExtTagTupstore));
 
 	conv->ToDatum(args[0], tupstore);
 
@@ -1597,7 +1607,7 @@ check_window_this(const FunctionCallbackInfo<v8::Value>& args)
 	}
 
 	FunctionCallInfo fcinfo = static_cast<FunctionCallInfo>(
-		field0.As<External>()->Value(v8::kExternalPointerTypeTagDefault));
+		field0.As<External>()->Value(kPlv8ExtTagFcInfo));
 	if (fcinfo == NULL)
 		throw js_error("window function api called with wrong object");
 
@@ -2141,7 +2151,7 @@ plv8_ExpectedColumns(const FunctionCallbackInfo<v8::Value>& args)
 	}
 
 	Converter *conv = static_cast<Converter *>(
-		Handle<External>::Cast(conv_value)->Value(v8::kExternalPointerTypeTagDefault));
+		Handle<External>::Cast(conv_value)->Value(kPlv8ExtTagConverter));
 	if (conv == nullptr || conv->GetTupleDesc() == NULL)
 	{
 		args.GetReturnValue().Set(Null(isolate));
@@ -2430,9 +2440,9 @@ plv8_ReturnQuery(const FunctionCallbackInfo<v8::Value>& args)
 		throw js_error("return_query requires a SQL query string");
 
 	Converter *conv = static_cast<Converter *>(
-		Handle<External>::Cast(conv_value)->Value(v8::kExternalPointerTypeTagDefault));
+		Handle<External>::Cast(conv_value)->Value(kPlv8ExtTagConverter));
 	Tuplestorestate *tupstore = static_cast<Tuplestorestate *>(
-		Handle<External>::Cast(tupstore_value)->Value(v8::kExternalPointerTypeTagDefault));
+		Handle<External>::Cast(tupstore_value)->Value(kPlv8ExtTagTupstore));
 
 	CString sql(args[0]);
 	Handle<Array> params;
@@ -2519,17 +2529,17 @@ plv8_PlanReturnQuery(const FunctionCallbackInfo<v8::Value>& args)
 		throw js_error("return_query called in context that cannot accept a set");
 
 	Converter *conv = static_cast<Converter *>(
-		Handle<External>::Cast(conv_value)->Value(v8::kExternalPointerTypeTagDefault));
+		Handle<External>::Cast(conv_value)->Value(kPlv8ExtTagConverter));
 	Tuplestorestate *tupstore = static_cast<Tuplestorestate *>(
-		Handle<External>::Cast(tupstore_value)->Value(v8::kExternalPointerTypeTagDefault));
+		Handle<External>::Cast(tupstore_value)->Value(kPlv8ExtTagTupstore));
 
-	SPIPlanPtr plan = static_cast<SPIPlanPtr>(
-		self->GetInternalField(0).As<External>()->Value(v8::kExternalPointerTypeTagDefault));
+	plv8_prepared_plan_handle *handle = static_cast<plv8_prepared_plan_handle *>(
+		self->GetInternalField(0).As<External>()->Value(kPlv8ExtTagSPIPlan));
+	SPIPlanPtr plan = handle ? handle->plan : NULL;
 	if (plan == NULL)
 		throw js_error("plan unexpectedly null");
 
-	plv8_param_state *parstate = static_cast<plv8_param_state *>(
-		self->GetInternalField(1).As<External>()->Value(v8::kExternalPointerTypeTagDefault));
+	plv8_param_state *parstate = handle ? handle->parstate : NULL;
 	int argcount = parstate ? parstate->numParams : SPI_getargcount(plan);
 
 	Handle<Array> params;

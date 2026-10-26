@@ -307,6 +307,16 @@ public:
  * and probably adds overhead.  We need a class because the destructor
  * makes sure the restore happens.
  */
+enum Plv8ExternalPointerTag : v8::ExternalPointerTypeTag
+{
+	kPlv8ExtTagCallback   = 1, /* v8::FunctionCallback in WrapCallback / UnwrapCallback */
+	kPlv8ExtTagSPIPlan    = 2, /* plv8_prepared_plan_handle* in PreparedPlan internal field 0 */
+	kPlv8ExtTagParamState = 3, /* plv8_param_state* */
+	kPlv8ExtTagFcInfo     = 4, /* FunctionCallInfo in PLV8_INTNL_FCINFO & WindowObject[0] */
+	kPlv8ExtTagConverter  = 5, /* Converter* in PLV8_INTNL_CONV */
+	kPlv8ExtTagTupstore   = 6, /* Tuplestorestate* in PLV8_INTNL_TUPSTORE */
+};
+
 class WindowFunctionSupport
 {
 private:
@@ -335,7 +345,7 @@ public:
 			/* Stash the current item, just in case of nested call */
 			m_prev_fcinfo = m_plv8obj->GetInternalField(PLV8_INTNL_FCINFO).As<v8::Value>();
 			m_plv8obj->SetInternalField(PLV8_INTNL_FCINFO,
-					v8::External::New(isolate, fcinfo, v8::kExternalPointerTypeTagDefault));
+					v8::External::New(isolate, fcinfo, kPlv8ExtTagFcInfo));
 		}
 	}
 	bool IsWindowCall() { return WindowObjectIsValid(m_winobj); }
@@ -380,9 +390,9 @@ public:
 		m_prev_conv = m_plv8obj->GetInternalField(PLV8_INTNL_CONV).As<v8::Value>();
 		m_prev_tupstore = m_plv8obj->GetInternalField(PLV8_INTNL_TUPSTORE).As<v8::Value>();
 		m_plv8obj->SetInternalField(PLV8_INTNL_CONV,
-									v8::External::New(isolate, conv, v8::kExternalPointerTypeTagDefault));
+									v8::External::New(isolate, conv, kPlv8ExtTagConverter));
 		m_plv8obj->SetInternalField(PLV8_INTNL_TUPSTORE,
-									v8::External::New(isolate, tupstore, v8::kExternalPointerTypeTagDefault));
+									v8::External::New(isolate, tupstore, kPlv8ExtTagTupstore));
 	}
 	~SRFSupport()
 	{

@@ -697,7 +697,11 @@ CreateExternalArray(void *data, plv8_external_array_type array_type,
 	Local<v8::ArrayBuffer> buffer;
 	Local<v8::TypedArray> array;
 
-	buffer = v8::ArrayBuffer::New(isolate, byte_size);
+	buffer = v8::ArrayBuffer::New(
+		isolate, byte_size,
+		(byte_size > 0 && data != NULL)
+			? v8::BackingStoreInitializationMode::kUninitialized
+			: v8::BackingStoreInitializationMode::kZeroInitialized);
 	if (buffer.IsEmpty())
 	{
 		return {};
