@@ -309,12 +309,10 @@ public:
  */
 enum Plv8ExternalPointerTag : v8::ExternalPointerTypeTag
 {
-	kPlv8ExtTagCallback   = 1, /* v8::FunctionCallback in WrapCallback / UnwrapCallback */
-	kPlv8ExtTagSPIPlan    = 2, /* plv8_prepared_plan_handle* in PreparedPlan internal field 0 */
-	kPlv8ExtTagParamState = 3, /* plv8_param_state* */
-	kPlv8ExtTagFcInfo     = 4, /* FunctionCallInfo in PLV8_INTNL_FCINFO & WindowObject[0] */
-	kPlv8ExtTagConverter  = 5, /* Converter* in PLV8_INTNL_CONV */
-	kPlv8ExtTagTupstore   = 6, /* Tuplestorestate* in PLV8_INTNL_TUPSTORE */
+	kPlv8ExtTagSPIPlan    = 1, /* plv8_prepared_plan_handle* in PreparedPlan internal field 0 */
+	kPlv8ExtTagFcInfo     = 2, /* FunctionCallInfo in PLV8_INTNL_FCINFO & WindowObject[0] */
+	kPlv8ExtTagConverter  = 3, /* Converter* in PLV8_INTNL_CONV */
+	kPlv8ExtTagTupstore   = 4, /* Tuplestorestate* in PLV8_INTNL_TUPSTORE */
 };
 
 class WindowFunctionSupport

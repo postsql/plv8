@@ -34,7 +34,9 @@ extern "C" {
 
 using namespace v8;
 
-static void plv8_FunctionInvoker(const FunctionCallbackInfo<v8::Value>& args) throw();
+static void plv8_FunctionInvoker(const FunctionCallbackInfo<v8::Value>& args, FunctionCallback fn) throw();
+template <FunctionCallback Fn>
+static __attribute__((aligned(32))) void plv8_FunctionInvokerTemplated(const FunctionCallbackInfo<v8::Value>& args) throw();
 static void plv8_Elog(const FunctionCallbackInfo<v8::Value>& args);
 static void plv8_Execute(const FunctionCallbackInfo<v8::Value>& args);
 static void plv8_Prepare(const FunctionCallbackInfo<v8::Value>& args);
@@ -75,48 +77,47 @@ static void plv8_CurrentSetting(const FunctionCallbackInfo<v8::Value>& args);
 static void plv8_ProcCacheKey(const FunctionCallbackInfo<v8::Value>& args);
 
 const intptr_t plv8_external_references[] = {
-	reinterpret_cast<intptr_t>(plv8_FunctionInvoker),
-	reinterpret_cast<intptr_t>(plv8_Elog),
-	reinterpret_cast<intptr_t>(plv8_Execute),
-	reinterpret_cast<intptr_t>(plv8_Prepare),
-	reinterpret_cast<intptr_t>(plv8_PlanCursor),
-	reinterpret_cast<intptr_t>(plv8_PlanExecute),
-	reinterpret_cast<intptr_t>(plv8_PlanReturnQuery),
-	reinterpret_cast<intptr_t>(plv8_PlanFree),
-	reinterpret_cast<intptr_t>(plv8_CursorFetch),
-	reinterpret_cast<intptr_t>(plv8_CursorMove),
-	reinterpret_cast<intptr_t>(plv8_CursorClose),
-	reinterpret_cast<intptr_t>(plv8_ReturnNext),
-	reinterpret_cast<intptr_t>(plv8_Subtransaction),
-	reinterpret_cast<intptr_t>(plv8_FindFunction),
-	reinterpret_cast<intptr_t>(plv8_GetWindowObject),
-	reinterpret_cast<intptr_t>(plv8_WinGetPartitionLocal),
-	reinterpret_cast<intptr_t>(plv8_WinSetPartitionLocal),
-	reinterpret_cast<intptr_t>(plv8_WinGetCurrentPosition),
-	reinterpret_cast<intptr_t>(plv8_WinGetPartitionRowCount),
-	reinterpret_cast<intptr_t>(plv8_WinSetMarkPosition),
-	reinterpret_cast<intptr_t>(plv8_WinRowsArePeers),
-	reinterpret_cast<intptr_t>(plv8_WinGetFuncArgInPartition),
-	reinterpret_cast<intptr_t>(plv8_WinGetFuncArgInFrame),
-	reinterpret_cast<intptr_t>(plv8_WinGetFuncArgCurrent),
-	reinterpret_cast<intptr_t>(plv8_QuoteLiteral),
-	reinterpret_cast<intptr_t>(plv8_QuoteNullable),
-	reinterpret_cast<intptr_t>(plv8_QuoteIdent),
-	reinterpret_cast<intptr_t>(plv8_MemoryUsage),
-	reinterpret_cast<intptr_t>(plv8_Commit),
-	reinterpret_cast<intptr_t>(plv8_Rollback),
-	reinterpret_cast<intptr_t>(plv8_CompileWasmCached),
-	reinterpret_cast<intptr_t>(plv8_Require),
-	reinterpret_cast<intptr_t>(plv8_Import),
-	reinterpret_cast<intptr_t>(plv8_CompileBytecode),
-	reinterpret_cast<intptr_t>(plv8_ExpectedColumns),
-	reinterpret_cast<intptr_t>(plv8_ReturnQuery),
-	reinterpret_cast<intptr_t>(plv8_RegisterColumnInference),
-	reinterpret_cast<intptr_t>(plv8_RegisterSupport),
-	reinterpret_cast<intptr_t>(plv8_SetFunctionColumns),
-	reinterpret_cast<intptr_t>(plv8_SetFunctionSupport),
-	reinterpret_cast<intptr_t>(plv8_CurrentSetting),
-	reinterpret_cast<intptr_t>(plv8_ProcCacheKey),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_Elog>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_Execute>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_Prepare>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_PlanCursor>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_PlanExecute>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_PlanReturnQuery>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_PlanFree>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_CursorFetch>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_CursorMove>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_CursorClose>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_ReturnNext>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_Subtransaction>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_FindFunction>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_GetWindowObject>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_WinGetPartitionLocal>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_WinSetPartitionLocal>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_WinGetCurrentPosition>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_WinGetPartitionRowCount>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_WinSetMarkPosition>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_WinRowsArePeers>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_WinGetFuncArgInPartition>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_WinGetFuncArgInFrame>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_WinGetFuncArgCurrent>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_QuoteLiteral>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_QuoteNullable>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_QuoteIdent>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_MemoryUsage>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_Commit>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_Rollback>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_CompileWasmCached>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_Require>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_Import>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_CompileBytecode>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_ExpectedColumns>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_ReturnQuery>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_RegisterColumnInference>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_RegisterSupport>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_SetFunctionColumns>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_SetFunctionSupport>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_CurrentSetting>),
+	reinterpret_cast<intptr_t>(&plv8_FunctionInvokerTemplated<plv8_ProcCacheKey>),
 	0
 };
 
@@ -134,31 +135,14 @@ typedef struct window_storage
 	char		data[1];		/* actual string (without null-termination */
 } window_storage;
 
-static inline Local<v8::Value>
-WrapCallback(FunctionCallback func)
-{
-	Isolate* isolate = Isolate::GetCurrent();
-	return External::New(isolate,
-			reinterpret_cast<void *>(
-				reinterpret_cast<uintptr_t>(func)),
-			kPlv8ExtTagCallback);
-}
-
-static inline FunctionCallback
-UnwrapCallback(Handle<v8::Value> value)
-{
-	return reinterpret_cast<FunctionCallback>(
-			reinterpret_cast<uintptr_t>(External::Cast(*value)->Value(kPlv8ExtTagCallback)));
-}
-
+template <FunctionCallback Fn>
 static inline void
 SetCallback(Handle<ObjectTemplate> obj, const char *name,
-			FunctionCallback func, PropertyAttribute attr = None)
+			PropertyAttribute attr = None)
 {
 	Isolate* isolate = Isolate::GetCurrent();
 	obj->Set(isolate, name,
-				FunctionTemplate::New(isolate, plv8_FunctionInvoker,
-					WrapCallback(func)), attr);
+				FunctionTemplate::New(isolate, plv8_FunctionInvokerTemplated<Fn>), attr);
 }
 
 class SubTranBlock
@@ -433,31 +417,31 @@ SetupPlv8Functions(Handle<ObjectTemplate> plv8)
 	PropertyAttribute	attrFull =
 		PropertyAttribute(ReadOnly | DontEnum | DontDelete);
 
-	SetCallback(plv8, "elog", plv8_Elog, attrFull);
-	SetCallback(plv8, "execute", plv8_Execute, attrFull);
-	SetCallback(plv8, "prepare", plv8_Prepare, attrFull);
-	SetCallback(plv8, "return_next", plv8_ReturnNext, attrFull);
-	SetCallback(plv8, "subtransaction", plv8_Subtransaction, attrFull);
-	SetCallback(plv8, "find_function", plv8_FindFunction, attrFull);
-	SetCallback(plv8, "get_window_object", plv8_GetWindowObject, attrFull);
-	SetCallback(plv8, "quote_literal", plv8_QuoteLiteral, attrFull);
-	SetCallback(plv8, "quote_nullable", plv8_QuoteNullable, attrFull);
-	SetCallback(plv8, "quote_ident", plv8_QuoteIdent, attrFull);
-	SetCallback(plv8, "memory_usage", plv8_MemoryUsage, attrFull);
-	SetCallback(plv8, "rollback", plv8_Rollback, attrFull);
-	SetCallback(plv8, "commit", plv8_Commit, attrFull);
-	SetCallback(plv8, "compile_wasm_cached", plv8_CompileWasmCached, attrFull);
-	SetCallback(plv8, "require", plv8_Require, attrFull);
-	SetCallback(plv8, "import", plv8_Import, attrFull);
-	SetCallback(plv8, "compile_bytecode", plv8_CompileBytecode, attrFull);
-	SetCallback(plv8, "expected_columns", plv8_ExpectedColumns, attrFull);
-	SetCallback(plv8, "return_query", plv8_ReturnQuery, attrFull);
-	SetCallback(plv8, "register_column_inference", plv8_RegisterColumnInference, attrFull);
-	SetCallback(plv8, "register_support", plv8_RegisterSupport, attrFull);
-	SetCallback(plv8, "set_function_columns", plv8_SetFunctionColumns, attrFull);
-	SetCallback(plv8, "set_function_support", plv8_SetFunctionSupport, attrFull);
-	SetCallback(plv8, "current_setting", plv8_CurrentSetting, attrFull);
-	SetCallback(plv8, "proc_cache_key", plv8_ProcCacheKey, attrFull);
+	SetCallback<plv8_Elog>(plv8, "elog", attrFull);
+	SetCallback<plv8_Execute>(plv8, "execute", attrFull);
+	SetCallback<plv8_Prepare>(plv8, "prepare", attrFull);
+	SetCallback<plv8_ReturnNext>(plv8, "return_next", attrFull);
+	SetCallback<plv8_Subtransaction>(plv8, "subtransaction", attrFull);
+	SetCallback<plv8_FindFunction>(plv8, "find_function", attrFull);
+	SetCallback<plv8_GetWindowObject>(plv8, "get_window_object", attrFull);
+	SetCallback<plv8_QuoteLiteral>(plv8, "quote_literal", attrFull);
+	SetCallback<plv8_QuoteNullable>(plv8, "quote_nullable", attrFull);
+	SetCallback<plv8_QuoteIdent>(plv8, "quote_ident", attrFull);
+	SetCallback<plv8_MemoryUsage>(plv8, "memory_usage", attrFull);
+	SetCallback<plv8_Rollback>(plv8, "rollback", attrFull);
+	SetCallback<plv8_Commit>(plv8, "commit", attrFull);
+	SetCallback<plv8_CompileWasmCached>(plv8, "compile_wasm_cached", attrFull);
+	SetCallback<plv8_Require>(plv8, "require", attrFull);
+	SetCallback<plv8_Import>(plv8, "import", attrFull);
+	SetCallback<plv8_CompileBytecode>(plv8, "compile_bytecode", attrFull);
+	SetCallback<plv8_ExpectedColumns>(plv8, "expected_columns", attrFull);
+	SetCallback<plv8_ReturnQuery>(plv8, "return_query", attrFull);
+	SetCallback<plv8_RegisterColumnInference>(plv8, "register_column_inference", attrFull);
+	SetCallback<plv8_RegisterSupport>(plv8, "register_support", attrFull);
+	SetCallback<plv8_SetFunctionColumns>(plv8, "set_function_columns", attrFull);
+	SetCallback<plv8_SetFunctionSupport>(plv8, "set_function_support", attrFull);
+	SetCallback<plv8_CurrentSetting>(plv8, "current_setting", attrFull);
+	SetCallback<plv8_ProcCacheKey>(plv8, "proc_cache_key", attrFull);
 
 	plv8->SetInternalFieldCount(PLV8_INTNL_MAX);
 }
@@ -468,7 +452,7 @@ SetupGlobalFunctions(Handle<ObjectTemplate> global)
 	PropertyAttribute	attrFull =
 		PropertyAttribute(ReadOnly | DontEnum | DontDelete);
 
-	SetCallback(global, "require", plv8_Require, attrFull);
+	SetCallback<plv8_Require>(global, "require", attrFull);
 }
 
 void
@@ -478,10 +462,10 @@ SetupPrepFunctions(Handle<ObjectTemplate> templ)
 		PropertyAttribute(ReadOnly | DontEnum | DontDelete);
 
 	templ->SetInternalFieldCount(1);
-	SetCallback(templ, "cursor", plv8_PlanCursor, attrFull);
-	SetCallback(templ, "execute", plv8_PlanExecute, attrFull);
-	SetCallback(templ, "return_query", plv8_PlanReturnQuery, attrFull);
-	SetCallback(templ, "free", plv8_PlanFree, attrFull);
+	SetCallback<plv8_PlanCursor>(templ, "cursor", attrFull);
+	SetCallback<plv8_PlanExecute>(templ, "execute", attrFull);
+	SetCallback<plv8_PlanReturnQuery>(templ, "return_query", attrFull);
+	SetCallback<plv8_PlanFree>(templ, "free", attrFull);
 }
 
 void
@@ -491,9 +475,9 @@ SetupCursorFunctions(Handle<ObjectTemplate> templ)
 		PropertyAttribute(ReadOnly | DontEnum | DontDelete);
 
 	templ->SetInternalFieldCount(1);
-	SetCallback(templ, "fetch", plv8_CursorFetch, attrFull);
-	SetCallback(templ, "move", plv8_CursorMove, attrFull);
-	SetCallback(templ, "close", plv8_CursorClose, attrFull);
+	SetCallback<plv8_CursorFetch>(templ, "fetch", attrFull);
+	SetCallback<plv8_CursorMove>(templ, "move", attrFull);
+	SetCallback<plv8_CursorClose>(templ, "close", attrFull);
 }
 
 void
@@ -507,15 +491,15 @@ SetupWindowFunctions(Handle<ObjectTemplate> templ)
 	templ->SetInternalFieldCount(1);
 
 	/* Functions. */
-	SetCallback(templ, "get_partition_local", plv8_WinGetPartitionLocal, attrFull);
-	SetCallback(templ, "set_partition_local", plv8_WinSetPartitionLocal, attrFull);
-	SetCallback(templ, "get_current_position", plv8_WinGetCurrentPosition, attrFull);
-	SetCallback(templ, "get_partition_row_count", plv8_WinGetPartitionRowCount, attrFull);
-	SetCallback(templ, "set_mark_position", plv8_WinSetMarkPosition, attrFull);
-	SetCallback(templ, "rows_are_peers", plv8_WinRowsArePeers, attrFull);
-	SetCallback(templ, "get_func_arg_in_partition", plv8_WinGetFuncArgInPartition, attrFull);
-	SetCallback(templ, "get_func_arg_in_frame", plv8_WinGetFuncArgInFrame, attrFull);
-	SetCallback(templ, "get_func_arg_current", plv8_WinGetFuncArgCurrent, attrFull);
+	SetCallback<plv8_WinGetPartitionLocal>(templ, "get_partition_local", attrFull);
+	SetCallback<plv8_WinSetPartitionLocal>(templ, "set_partition_local", attrFull);
+	SetCallback<plv8_WinGetCurrentPosition>(templ, "get_current_position", attrFull);
+	SetCallback<plv8_WinGetPartitionRowCount>(templ, "get_partition_row_count", attrFull);
+	SetCallback<plv8_WinSetMarkPosition>(templ, "set_mark_position", attrFull);
+	SetCallback<plv8_WinRowsArePeers>(templ, "rows_are_peers", attrFull);
+	SetCallback<plv8_WinGetFuncArgInPartition>(templ, "get_func_arg_in_partition", attrFull);
+	SetCallback<plv8_WinGetFuncArgInFrame>(templ, "get_func_arg_in_frame", attrFull);
+	SetCallback<plv8_WinGetFuncArgCurrent>(templ, "get_func_arg_current", attrFull);
 
 	/* Constants for get_func_in_XXX() */
 	templ->Set(v8::String::NewFromUtf8(isolate, "SEEK_CURRENT").ToLocalChecked(), Int32::New(isolate, WINDOW_SEEK_CURRENT), attrFull);
@@ -523,19 +507,25 @@ SetupWindowFunctions(Handle<ObjectTemplate> templ)
 	templ->Set(v8::String::NewFromUtf8(isolate, "SEEK_TAIL").ToLocalChecked(), Int32::New(isolate, WINDOW_SEEK_TAIL), attrFull);
 }
 
+template <FunctionCallback Fn>
+static __attribute__((aligned(32))) void
+plv8_FunctionInvokerTemplated(const FunctionCallbackInfo<v8::Value> &args) throw()
+{
+	plv8_FunctionInvoker(args, Fn);
+}
+
 /*
  * v8 is not exception-safe! We cannot throw C++ exceptions over v8 functions.
  * So, we catch C++ exceptions and convert them to JavaScript ones.
  */
-static __attribute__((aligned(32))) void
-plv8_FunctionInvoker(const FunctionCallbackInfo<v8::Value> &args) throw()
+static void
+plv8_FunctionInvoker(const FunctionCallbackInfo<v8::Value> &args, FunctionCallback fn) throw()
 {
 	PLV8_ASSERT_MAIN_PG_THREAD();
 	Isolate *		isolate = args.GetIsolate();
 	Handle<Context> context = isolate->GetCurrentContext();
 	HandleScope		handle_scope(isolate);
 	MemoryContext	ctx = CurrentMemoryContext;
-	FunctionCallback	fn = UnwrapCallback(args.Data());
 	/*
 	 * A callback that runs SQL may call into another plv8 function under a
 	 * different user (SECURITY DEFINER), which switches current_context and,
@@ -949,11 +939,25 @@ check_plan_this(const FunctionCallbackInfo<v8::Value> &args)
 
 	if (current_context == nullptr || current_context->plan_ftmpl.IsEmpty() ||
 		self.IsEmpty() || !current_context->plan_ftmpl.Get(isolate)->HasInstance(self) ||
-		self->InternalFieldCount() < 1 ||
-		!self->GetInternalField(0).As<v8::Value>()->IsExternal())
+		self->InternalFieldCount() < 1)
 	{
 		throw js_error("unexpected type");
 	}
+	Local<v8::Value> field0 = self->GetInternalField(0).As<v8::Value>();
+	if (!field0->IsExternal() && !field0->IsNull())
+	{
+		throw js_error("unexpected type");
+	}
+}
+
+static inline plv8_prepared_plan_handle *
+get_plan_handle(Local<v8::Object> self)
+{
+	Local<v8::Value> field0 = self->GetInternalField(0).As<v8::Value>();
+	if (!field0->IsExternal())
+		return nullptr;
+	return static_cast<plv8_prepared_plan_handle *>(
+		field0.As<External>()->Value(kPlv8ExtTagSPIPlan));
 }
 
 class PlanInUseGuard
@@ -963,8 +967,7 @@ private:
 
 public:
 	PlanInUseGuard(Isolate * /*isolate*/, Local<v8::Object> self)
-		: m_handle(static_cast<plv8_prepared_plan_handle *>(
-			self->GetInternalField(0).As<External>()->Value(kPlv8ExtTagSPIPlan)))
+		: m_handle(get_plan_handle(self))
 	{
 		if (m_handle != nullptr)
 			m_handle->in_use++;
@@ -996,8 +999,7 @@ plv8_PlanCursor(const FunctionCallbackInfo<v8::Value> &args)
 	check_plan_this(args);
 	PlanInUseGuard		in_use_guard(isolate, self);
 
-	plv8_prepared_plan_handle *handle = static_cast<plv8_prepared_plan_handle *>(
-			self->GetInternalField(0).As<External>()->Value(kPlv8ExtTagSPIPlan));
+	plv8_prepared_plan_handle *handle = get_plan_handle(self);
 	plan = handle ? handle->plan : NULL;
 
 	if (plan == NULL) {
@@ -1110,8 +1112,7 @@ plv8_PlanExecute(const FunctionCallbackInfo<v8::Value> &args)
 	check_plan_this(args);
 	PlanInUseGuard		in_use_guard(isolate, self);
 
-	plv8_prepared_plan_handle *handle = static_cast<plv8_prepared_plan_handle *>(
-			self->GetInternalField(0).As<External>()->Value(kPlv8ExtTagSPIPlan));
+	plv8_prepared_plan_handle *handle = get_plan_handle(self);
 	plan = handle ? handle->plan : NULL;
 	/* XXX: Add plan validation */
 
@@ -1206,8 +1207,7 @@ plv8_PlanFree(const FunctionCallbackInfo<v8::Value> &args)
 	int					status = 0;
 
 	check_plan_this(args);
-	plv8_prepared_plan_handle *handle = static_cast<plv8_prepared_plan_handle *>(
-			self->GetInternalField(0).As<External>()->Value(kPlv8ExtTagSPIPlan));
+	plv8_prepared_plan_handle *handle = get_plan_handle(self);
 	if (handle != nullptr && handle->in_use != 0)
 		throw js_error("cannot free a plan in use");
 
@@ -1225,7 +1225,7 @@ plv8_PlanFree(const FunctionCallbackInfo<v8::Value> &args)
 			pfree(parstate);
 		}
 		pfree(handle);
-		self->SetInternalField(0, External::New(isolate, 0, kPlv8ExtTagSPIPlan));
+		self->SetInternalField(0, Null(isolate));
 	}
 
 	args.GetReturnValue().Set(Int32::New(isolate, status));
@@ -2533,8 +2533,7 @@ plv8_PlanReturnQuery(const FunctionCallbackInfo<v8::Value>& args)
 	Tuplestorestate *tupstore = static_cast<Tuplestorestate *>(
 		Handle<External>::Cast(tupstore_value)->Value(kPlv8ExtTagTupstore));
 
-	plv8_prepared_plan_handle *handle = static_cast<plv8_prepared_plan_handle *>(
-		self->GetInternalField(0).As<External>()->Value(kPlv8ExtTagSPIPlan));
+	plv8_prepared_plan_handle *handle = get_plan_handle(self);
 	SPIPlanPtr plan = handle ? handle->plan : NULL;
 	if (plan == NULL)
 		throw js_error("plan unexpectedly null");
